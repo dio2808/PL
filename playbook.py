@@ -1,145 +1,160 @@
 import os
 import time
+import sys
 from google import genai
 from google.genai.errors import APIError
+from pypdf import PdfReader
 
-# --- CONFIGURATION ---
-MODEL_NAME = 'gemini-2.5-flash'
-MAX_RETRIES = 5
-PLAYBOOK_FILE = 'playbook_content.txt'  # File containing the troubleshooting data
+# --- Configuration ---
+# Your PDF file name. Ensure this file is in the same directory as this script.
+PLAYBOOK_FILE = 'CloudBuild Troubleshooting Playbook - Sheet1.pdf' 
 
-def load_playbook_content(filepath):
+# Set a delay for API retry logic
+RETRY_DELAY = 1  # seconds
+
+def load_playbook_content(file_path: str) -> str:
     """
-    Reads the RAG context (troubleshooting playbook) from a local text file.
-    In a production system, this would be replaced by a vector database lookup.
+    Extracts text content from the specified PDF file using pypdf.
+    Returns the extracted text as a single string.
     """
-    if not os.path.exists(filepath):
-        print(f"\n[FATAL ERROR] Playbook file not found at: {filepath}")
-        print("Please ensure you have created the 'playbook_content.txt' file in the same directory.")
-        return None
+    print(f"--- RAG System: Loading data from {file_path} ---")
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            return f.read()
+        reader = PdfReader(file_path)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() + "\n"
+        
+        if not text.strip():
+            print(f"Warning: Extracted text from PDF is empty. Check PDF format.")
+            return "# Cloud Build Troubleshooting Playbook: No content found in PDF."
+            
+        print(f"--- RAG System: Successfully extracted {len(text.splitlines())} lines of text. ---")
+        
+        # Clean up common PDF extraction artifacts (optional cleanup)
+        text = text.replace('\r\n', '\n').strip()
+        
+        return f"# Cloud Build Troubleshooting Playbook (Sourced from {file_path})\n\n{text}"
+
+    except FileNotFoundError:
+        print(f"\nERROR: Playbook file not found at path: {file_path}")
+        print("Please ensure the PDF file name matches exactly (including case and extension).")
+        sys.exit(1) # Exit if the core data source is missing
     except Exception as e:
-        print(f"\n[FATAL ERROR] Could not read playbook file: {e}")
-        return None
+        print(f"\nERROR: Could not read or parse PDF file: {e}")
+        sys.exit(1)
 
-def get_system_instruction(playbook_context):
-    """Defines the agent's role, priority, and injects the loaded knowledge base."""
-    if not playbook_context:
-        # Fallback instruction if the file couldn't be loaded
-        return "You are a Cloud Build CI/CD Troubleshooting Agent. You must use the Google Search tool to find solutions as the internal playbook is unavailable."
-
-    return f"""
-    You are a highly specialized Cloud Build CI/CD Troubleshooting Agent.
-    Your primary goal is to help the user resolve their pipeline errors.
-
-    **KNOWLEDGE BASE (Priority 1: Use this context first):**
-    {playbook_context}
-
-    **INSTRUCTIONS:**
-    1. First, search your KNOWLEDGE BASE for the user's error. If a matching cause and remedy are found, provide that answer directly.
-    2. If the answer is not in the KNOWLEDGE BASE, use the Google Search tool to find a solution, focusing specifically on official Google Cloud documentation.
-    3. Always explain the potential cause and provide clear, step-by-step remedies.
-    4. Maintain a professional, helpful, and concise tone.
-    """
 
 def run_agent(user_query: str, playbook_context: str):
     """
-    Initializes the Gemini client, constructs the prompt, and gets the response.
+    Initializes the Gemini client (using ADC) and runs the RAG query.
     """
-    print(f"-> Agent Initialized. Query: '{user_query}'")
-
     try:
-        # Initialize the client. The SDK automatically picks up the API key.
+        # The client automatically uses Application Default Credentials (ADC)
+        # when running on GCP or after local 'gcloud auth' setup.
         client = genai.Client()
+        print("--- Gemini Client Initialized (using Service Account credentials) ---")
     except Exception as e:
-        print("\n[ERROR] Failed to initialize Gemini Client. Check if the GEMINI_API_KEY environment variable is set correctly.")
-        print(f"Details: {e}")
+        print(f"ERROR: Failed to initialize Gemini Client: {e}")
+        print("Please ensure your Service Account is authenticated locally (gcloud auth) or the VM has the correct role.")
         return
 
-    # --- Constructing the Full Prompt and Configuration ---
-    
-    system_instruction = get_system_instruction(playbook_context)
-    tools = [{"google_search": {}}]
-    contents = [user_query]
-    
+    # 1. Define the System Instruction (Persona + RAG Context)
+    system_prompt = f"""
+    You are a world-class Cloud Build Troubleshooting Expert. 
+    Your primary function is to resolve errors in CI/CD pipelines.
+
+    --- PRIORITY 1: INTERNAL KNOWLEDGE BASE (RAG) ---
+    You MUST first attempt to answer the user's query using the following troubleshooting playbook.
+    If you find a match, always explain the potential cause and provide the clear, step-by-step remedies from the playbook.
+
+    {playbook_context}
+
+    --- PRIORITY 2: GOOGLE SEARCH GROUNDING ---
+    If the internal playbook does NOT contain a relevant answer, use the Google Search tool to find next steps, primarily focusing on official Google Cloud documentation.
+
+    Instructions for Output:
+    1. Be concise, professional, and actionable.
+    2. Always mention which source was used (Internal Playbook or Google Search).
+    """
+
+    # 2. Define the Request Payload
+    payload = {
+        "contents": [{ "parts": [{ "text": user_query }] }],
+        "system_instruction": { "parts": [{ "text": system_prompt }] },
+        
+        # Enable Google Search grounding as the fallback tool
+        "tools": [{ "google_search": {} }],
+        
+        # Model to use
+        "model": "gemini-2.5-flash"
+    }
+
+    # 3. Call the Gemini API with Retry Logic
+    max_retries = 5
     response = None
-    for attempt in range(MAX_RETRIES):
+    
+    for attempt in range(max_retries):
         try:
-            print(f"-> Attempt {attempt + 1}/{MAX_RETRIES}: Calling Gemini API...")
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=contents,
-                config=genai.types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    tools=tools
-                )
-            )
-            # If successful, break the loop
+            print(f"--- Sending query to Gemini (Attempt {attempt + 1}/{max_retries})... ---")
+            response = client.models.generate_content(**payload)
             break
         except APIError as e:
-            if attempt < MAX_RETRIES - 1:
-                wait_time = 2 ** attempt
-                print(f"   [WARNING] API Error ({e.status_code}). Retrying in {wait_time} seconds...")
+            if 'rate limit' in str(e).lower() and attempt < max_retries - 1:
+                wait_time = RETRY_DELAY * (2 ** attempt)
+                print(f"Rate limit hit. Retrying in {wait_time:.2f} seconds...")
                 time.sleep(wait_time)
             else:
-                print(f"\n[FATAL ERROR] All API attempts failed after {MAX_RETRIES} retries.")
-                print(f"Details: {e}")
+                print(f"Fatal API Error: {e}")
                 return
         except Exception as e:
-            print(f"\n[FATAL ERROR] An unexpected error occurred: {e}")
+            print(f"An unexpected error occurred: {e}")
             return
 
 
-    # --- Process and Display Results ---
-    
-    if not response or not response.text:
-        print("\n[INFO] Agent could not find a definitive answer or generate content.")
-        return
+    # 4. Process and Display Response
+    if response and response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+        generated_text = response.text
+        
+        print("\n" + "="*80)
+        print("AGENT RESPONSE:")
+        print("="*80)
+        print(generated_text)
+        print("="*80)
 
-    print("\n" + "="*80)
-    print(f"Agent Response (Model: {MODEL_NAME})\n")
-    print(response.text)
-    print("="*80)
-
-    # Display Grounding Metadata (sources from Google Search)
-    grounding_metadata = response.candidates[0].grounding_metadata
-    if grounding_metadata and grounding_metadata.grounding_chunks:
-        # Extract unique URIs from the grounding chunks
-        sources = [c.web.uri for c in grounding_metadata.grounding_chunks if c.web]
-        if sources:
-            print("\n[INFO] Sources Used (Google Search Grounding):")
-            for i, source in enumerate(sorted(list(set(sources)))):
-                print(f"  {i+1}. {source}")
+        # Extract and display grounding sources if available
+        if response.candidates[0].grounding_metadata and response.candidates[0].grounding_metadata.grounding_attributions:
+            sources = response.candidates[0].grounding_metadata.grounding_attributions
+            print("\nGROUNDING SOURCES (Used for Fallback Search):")
+            for source in sources:
+                print(f"- {source.web.title}: {source.web.uri}")
+            print("-" * 80)
         else:
-            print("\n[INFO] Response was generated primarily from the internal Playbook Context (RAG).")
+            print("\nGROUNDING SOURCES: Only internal playbook context was used (RAG).")
+            print("-" * 80)
+
     else:
-        print("\n[INFO] Response was generated primarily from the internal Playbook Context (RAG).")
+        print("\nERROR: No response or empty content received from the model.")
 
 
 def main():
-    """Main function to simulate user interaction."""
+    """Main execution function."""
     
-    print("--- Cloud Build Agent Simulation ---")
-    
-    # 1. Load the playbook content from the external file
+    # 1. Load the internal playbook content from the PDF
     playbook_context = load_playbook_content(PLAYBOOK_FILE)
-    if not playbook_context:
-        print("Cannot run agent without playbook content.")
-        return
-    
-    # --- RAG Test Case (Answer in the Playbook) ---
-    # The agent should use the playbook_content.txt for this answer.
-    # Change this query to test different errors from your playbook!
-    user_input = "I'm seeing a Missing necessary permission iam.serviceAccounts actAs error in my CI/CD pipeline. How do I fix that?"
 
-    # --- Search Test Case (Answer not in the Playbook) ---
-    # The agent should use the Google Search tool for this answer.
-    # user_input = "How do I secure my GKE cluster with binary authorization?"
+    # 2. Define the user's specific query
+    # TEST 1: Query covered by the RAG playbook (expect answer from PDF)
+    user_query = "I'm seeing a Missing necessary permission iam.serviceAccounts actAs error in my CI/CD pipeline. How do I fix that?"
 
-    run_agent(user_input, playbook_context)
-    print("\n--- Simulation Complete ---")
+    # TEST 2: Query NOT covered by the RAG playbook (expect Google Search grounding)
+    # user_query = "What is the recommended structure for a secure VPC Service Controls perimeter and how does it affect Cloud Build?" 
+
+    print(f"\nUSER QUERY: {user_query}")
+    print("-" * 80)
+
+    # 3. Run the agent with the loaded context and query
+    run_agent(user_query, playbook_context)
+
 
 if __name__ == "__main__":
     main()
