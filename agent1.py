@@ -1,11 +1,10 @@
 from google.adk.agents import Agent
 from google.adk.tools import VertexAiSearchTool
-from google.adk.vectorstores import ChromaVectorStore
 from sentence_transformers import SentenceTransformer
-from PyPDF2 import PdfReader
 import chromadb
+from PyPDF2 import PdfReader
 
-# --- Step 1: Build vector DB from PDF ---
+# --- Step 1: Build Chroma vector DB from PDF ---
 PDF_PATH = "./data/cloudbuild_errors.pdf"
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
@@ -29,19 +28,14 @@ def ingest_pdf():
         collection.add(ids=[str(i)], documents=[chunk], embeddings=[embedding])
     print("✅ PDF ingested into vector DB!")
 
-# --- Step 2: Wrap Chroma collection into ADK VectorStore ---
-vector_store = ChromaVectorStore(
-    collection=collection,
-    embedding_function=embedder.encode
-)
-
-# --- Step 3: Create VertexAiSearchTool ---
+# --- Step 2: Create VertexAiSearchTool ---
 search_tool = VertexAiSearchTool(
-    vectorstore=vector_store,
+    collection=collection,            # pass Chroma collection directly
+    embedding_model=embedder.encode,  # embedding function
     top_k=3
 )
 
-# --- Step 4: Create ADK Agent ---
+# --- Step 3: Create ADK Agent ---
 rag_agent = Agent(
     name="CloudBuildRAG",
     tools=[search_tool],
