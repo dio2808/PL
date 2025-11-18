@@ -1,29 +1,33 @@
+import os
 from PyPDF2 import PdfReader
 from sentence_transformers import SentenceTransformer
 import chromadb
 
 PDF_PATH = "./data/cloudbuild_errors.pdf"
-db = chromadb.PersistentClient(path="./vectordb")
-collection = db.get_or_create_collection(name="errors")
+
+# Embedding model
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
-def chunk(text, size=500):
+# Persistent vector DB
+client = chromadb.PersistentClient(path="./vectordb")
+collection = client.get_or_create_collection("cloud_errors")
+
+def chunk_text(text, size=500):
     return [text[i:i+size] for i in range(0, len(text), size)]
 
-def ingest():
+def ingest_pdf():
     reader = PdfReader(PDF_PATH)
-    text = ""
-
+    full_text = ""
     for page in reader.pages:
-        text += page.extract_text() + "\n"
+        full_text += page.extract_text() + "\n"
 
-    chunks = chunk(text)
+    chunks = chunk_text(full_text)
 
-    for i, c in enumerate(chunks):
-        embedding = embedder.encode(c).tolist()
-        collection.add(ids=[str(i)], documents=[c], embeddings=[embedding])
+    for i, chunk in enumerate(chunks):
+        embedding = embedder.encode(chunk).tolist()
+        collection.add(ids=[str(i)], documents=[chunk], embeddings=[embedding])
 
-    print("PDF indexed successfully.")
+    print("✅ PDF successfully indexed!")
 
 if __name__ == "__main__":
-    ingest()
+    ingest_pdf()
