@@ -1,17 +1,16 @@
-from agent import ask_gemini
+from rag_agent import solve_error
 
-print("\n🚀 Gemini RAG Cloud Build Helper Ready!")
+print("🚀 Gemini RAG Cloud Build Helper Ready!")
 print("Type 'exit' to quit.\n")
 
 while True:
-    query = input("❓ Enter Cloud Build error: ")
+    user_input = input("❓ Enter Cloud Build error: ")
 
-    if query.lower() == "exit":
+    if user_input.lower() in ["exit", "quit"]:
         break
 
     print("\n⏳ Thinking...\n")
-    answer = ask_gemini(query)
-    
+    answer = solve_error(user_input)
     print("💡 Suggested Fix:\n")
     print(answer)
     print("\n" + "-"*70 + "\n")
