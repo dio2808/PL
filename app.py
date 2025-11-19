@@ -1,14 +1,16 @@
-from google.adk.agent import Agent
-from google.adk.models.gemini import GeminiModel
+# app.py
+
+from google.adk.web import WebAgent
+from google.adk.generative import ChatModel
 from google.adk.tools import Tool
 
 from tools.pdf_search import search_pdf
 from tools.google_search import google_cloud_docs_search
 
-model = GeminiModel("gemini-2.0-flash")
+# Initialize the model
+model = ChatModel("gemini-2.0-flash")  # replaces old GeminiModel
 
-
-# Tools registered to agent
+# Tools registered to the agent
 search_pdf_tool = Tool(
     name="search_pdf",
     func=search_pdf,
@@ -31,12 +33,12 @@ fallback_google_tool = Tool(
     },
 )
 
-agent = Agent(
+# Create the agent
+agent = WebAgent(
     model=model,
     tools=[search_pdf_tool, fallback_google_tool],
     memory=True
 )
-
 
 if __name__ == "__main__":
     print("\n🤖 Cloud Build Troubleshooting Assistant")
