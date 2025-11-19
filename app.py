@@ -1,14 +1,13 @@
 # app.py
 
-from google.adk.web import WebAgent
-from google.adk.generative import ChatModel
+from google.adk.agents import Agent  # LlmAgent alias
 from google.adk.tools import Tool
 
 from tools.pdf_search import search_pdf
 from tools.google_search import google_cloud_docs_search
 
-# Initialize the model
-model = ChatModel("gemini-2.0-flash")  # replaces old GeminiModel
+# Initialize the model by passing the model name string
+MODEL_NAME = "gemini-2.0-flash"
 
 # Tools registered to the agent
 search_pdf_tool = Tool(
@@ -33,11 +32,17 @@ fallback_google_tool = Tool(
     },
 )
 
-# Create the agent
-agent = WebAgent(
-    model=model,
+# Create the LLM agent
+agent = Agent(
+    model=MODEL_NAME,
+    name="cloud_build_assistant",
+    description="Assists with Cloud Build troubleshooting.",
     tools=[search_pdf_tool, fallback_google_tool],
-    memory=True
+    instruction=(
+        "You are a helpful Cloud Build troubleshooting assistant. "
+        "Use the search_pdf tool first. If you can't find the answer, use google_search."
+    ),
+    memory=True  # if you want the agent to remember context
 )
 
 if __name__ == "__main__":
