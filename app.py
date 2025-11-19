@@ -1,48 +1,23 @@
 # app.py
 
-from google.adk.agents import Agent  # LlmAgent alias
-from google.adk.tools import Tool
+from google.adk.agents import Agent  # LLM agent
+from pdf_search import search_pdf
+from google_search import google_cloud_docs_search
 
-from tools.pdf_search import search_pdf
-from tools.google_search import google_cloud_docs_search
-
-# Initialize the model by passing the model name string
 MODEL_NAME = "gemini-2.0-flash"
 
-# Tools registered to the agent
-search_pdf_tool = Tool(
-    name="search_pdf",
-    func=search_pdf,
-    description="Searches the Cloud Build Troubleshooting PDF for an error or related text.",
-    args_schema={
-        "type": "object",
-        "properties": {"query": {"type": "string"}},
-        "required": ["query"]
-    },
-)
-
-fallback_google_tool = Tool(
-    name="google_search",
-    func=google_cloud_docs_search,
-    description="Fallback search in Google Cloud official documentation if PDF doesn't contain the answer.",
-    args_schema={
-        "type": "object",
-        "properties": {"query": {"type": "string"}},
-        "required": ["query"]
-    },
-)
-
-# Create the LLM agent
+# Create the agent
 agent = Agent(
     model=MODEL_NAME,
     name="cloud_build_assistant",
     description="Assists with Cloud Build troubleshooting.",
-    tools=[search_pdf_tool, fallback_google_tool],
+    tools=[search_pdf, google_cloud_docs_search],  # functions directly
     instruction=(
         "You are a helpful Cloud Build troubleshooting assistant. "
-        "Use the search_pdf tool first. If you can't find the answer, use google_search."
+        "Use search_pdf to search the PDF first. "
+        "If the PDF doesn't contain the answer, use google_cloud_docs_search."
     ),
-    memory=True  # if you want the agent to remember context
+    memory=True
 )
 
 if __name__ == "__main__":
@@ -56,5 +31,6 @@ if __name__ == "__main__":
             print("👋 Goodbye.")
             break
 
+        # Agent runs the query
         response = agent.run(prompt)
         print("\nAgent:", response, "\n")
