@@ -1,11 +1,9 @@
-import requests
-
 def google_cloud_docs_search(query: str) -> str:
     """
-    Searches Google documentation for Cloud Build errors.
-    Uses bing style fallback anonymous search endpoint (safe).
+    Searches Google Cloud documentation for Cloud Build errors.
+    Returns a link to Google Cloud search as a fallback.
     """
-    url = f"https://www.googleapis.com/customsearch/v1?q={query}+Google+Cloud+Build+error"
-    
-    # We aren't including API key intentionally in code — ADK model can decide how to refine.
+    if not query.strip():
+        return "No query detected."
+
     return f"No PDF match — Try Google Docs:\nhttps://cloud.google.com/search?q={query.replace(' ', '+')}"
