@@ -1,23 +1,27 @@
-# app.py
+import sys
+import os
 
-from google.adk.agents import Agent  # LLM agent
-from pdf_search import search_pdf
-from google_search import google_cloud_docs_search
+# Add project root to PYTHONPATH for VS Code / imports
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from google.adk.agents import LlmAgent
+from tools.pdf_search import search_pdf
+from tools.google_search import google_cloud_docs_search
 
 MODEL_NAME = "gemini-2.0-flash"
 
-# Create the agent
-agent = Agent(
+# Create the LLM agent
+agent = LlmAgent(
     model=MODEL_NAME,
     name="cloud_build_assistant",
     description="Assists with Cloud Build troubleshooting.",
     tools=[search_pdf, google_cloud_docs_search],  # functions directly
     instruction=(
         "You are a helpful Cloud Build troubleshooting assistant. "
-        "Use search_pdf to search the PDF first. "
-        "If the PDF doesn't contain the answer, use google_cloud_docs_search."
+        "Use search_pdf first. If the PDF doesn't contain the answer, "
+        "use google_cloud_docs_search."
     ),
-    memory=True
+    memory=True  # remember context
 )
 
 if __name__ == "__main__":
@@ -31,6 +35,5 @@ if __name__ == "__main__":
             print("👋 Goodbye.")
             break
 
-        # Agent runs the query
         response = agent.run(prompt)
         print("\nAgent:", response, "\n")
