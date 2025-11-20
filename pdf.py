@@ -1,7 +1,7 @@
-from google.adk.agents import Agent, RootAgent
+from google.adk.agents import Agent
 
 # ==========================
-# Paste all your GCP error content here
+# Full GCP error document
 # ==========================
 DOCUMENT = """
 Authentication / IAM:
@@ -24,7 +24,7 @@ Configuration / Trigger:
 - 404 : Requested entity was not found: Double-check source location, triggers, config files, IAM.
 
 Build / Runtime / Dependency:
-- docker build failed: failed to solve: file not found: Check Dockerfile paths and build context.
+- docker build failed: failed to solve: Check Dockerfile paths and build context.
 - Compilation failed: symbol not found: Update dependency versions; sync build tools.
 - Cannot read property 'xyz' of undefined: Ensure environment variables exist and build script passes them.
 - Container failed to start: PORT env variable not set: Modify code to listen on process.env.PORT.
@@ -68,19 +68,16 @@ Other / Misc:
 """
 
 # ==========================
-# Create the agent
+# Root agent definition
 # ==========================
-agent = Agent(
-    name="GCP Build Error Assistant",
+root_agent = Agent(
+    name='GCP Build Error Assistant',
+    model='gemini-2.5-flash',  # Or your preferred Gemini model
     instruction=(
         "You are a helpful assistant. Answer ONLY based on the DOCUMENT below. "
         "If the answer is not in the text, respond: 'I couldn't find that in the document.'\n\n"
         f"DOCUMENT:\n{DOCUMENT}"
     ),
-    model="gemini-2.5-flash"
+    description='The main assistant for user queries on GCP build errors.'
+    # Add tools or sub-agents here if needed, e.g., tools=[google_search]
 )
-
-# ==========================
-# Wrap as RootAgent for ADK Web
-# ==========================
-root_agent = RootAgent(agent=agent)
